@@ -24,7 +24,7 @@ from research.workload_client import MockHmsClient, run_workload
 REPO = Path(__file__).resolve().parents[2]
 
 
-def run(cfg: ExperimentConfig, mode: str, raw_root: Path, time_scale: float = 1.0) -> dict:
+def run(cfg: ExperimentConfig, mode: str, raw_root: Path, time_scale: float = 1.0, set_fault=None) -> dict:
     run_dir = raw_root / cfg.run_id
     tel = Telemetry(cfg.run_id, raw_root)
     manifest = {"run_id": cfg.run_id, "mode": mode, "seed": cfg.seed, "config_sha256": cfg.digest(),
@@ -48,14 +48,23 @@ def run(cfg: ExperimentConfig, mode: str, raw_root: Path, time_scale: float = 1.
                 f"real mode needs Person 1's HMS ({REQUIRED_DB} reset from hms_template, service start, "
                 "drain, verifier). Not implemented until integration.")
         # ---- mock harness run ----
-        observed = []
-        faults = []
-        def mock_fault(m, d): faults.append((m, d))
-        th = threading.Thread(target=lambda: observed.extend(
-            run_outage_schedule(cfg.outages, mock_fault, tel, time_scale)), daemon=True)
-        th.start()
-        summary = asyncio.run(run_workload(cfg, MockHmsClient(), tel, time_scale=time_scale, schedule=sched))
-        th.join(timeout=cfg.duration_s * time_scale + 5)
+        observed, outage_errors, faults = [], [], []
+        stop = threading.Event()
+        apply_fault = set_fault or (lambda m, d: faults.append((m, d)))      # mock fault controller by default
+        def outage_worker():
+            try:
+                observed.extend(run_outage_schedule(cfg.outages, apply_fault, tel, time_scale,
+                                                    sleep=lambda x: stop.wait(x), should_stop=stop.is_set))
+            except BaseException as exc:                                      # surfaced below, never swallowed
+                outage_errors.append(f"{type(exc).__name__}: {exc}")
+        th = threading.Thread(target=outage_worker, daemon=True); th.start()
+        try:
+            summary = asyncio.run(run_workload(cfg, MockHmsClient(), tel, time_scale=time_scale, schedule=sched))
+        finally:
+            th.join(timeout=cfg.duration_s * time_scale + 5)
+            stop.set(); th.join(timeout=5)                                    # abort + restore fault if still active
+        if outage_errors:
+            raise RuntimeError("outage schedule failed: " + "; ".join(outage_errors))
         manifest["workload_summary"] = summary
         manifest["outages_observed"] = observed
         manifest["stages"].update({"workload": "ok", "outages": "ok", "verification": "skipped (mock)"})

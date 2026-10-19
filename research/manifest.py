@@ -14,12 +14,23 @@ def _run(cmd, cwd=None):
         return None
 
 
+def package_versions(names=("numpy", "cryptography", "matplotlib", "fastapi", "sqlalchemy", "alembic",
+                            "httpx", "psycopg2-binary", "uvicorn", "pytest")) -> dict:
+    from importlib import metadata
+    out = {}
+    for n in names:
+        try: out[n] = metadata.version(n)
+        except metadata.PackageNotFoundError: out[n] = None
+    return out
+
+
 def collect_environment(repo_root: Path, requirements_file: str = "requirements.txt") -> dict:
     req = repo_root / requirements_file
     return {
         "git_commit": _run(["git", "rev-parse", "HEAD"], repo_root),
         "git_dirty": bool(_run(["git", "status", "--porcelain"], repo_root)),
         "requirements_sha256": hashlib.sha256(req.read_bytes()).hexdigest() if req.exists() else None,
+        "packages": package_versions(),
         "python": sys.version.split()[0], "os": platform.platform(),
         "machine": {"arch": platform.machine(), "processor": platform.processor() or None,
                     "node": platform.node()},

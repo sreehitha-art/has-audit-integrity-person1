@@ -43,3 +43,19 @@ A receipt is returned only after the SQL transaction commits. How strong that is
 and record the settings in the manifest. A single-node database is not protection against its own operator.
 Continuity checks are serialised by a process-level lock; run **one** anchor worker (the DB unique
 constraints remain the final guard if you ever scale out).
+
+## durably_retained_at semantics (needs Person 1's confirmation)
+The guide describes it as "time after successful commit". Implemented value: the database clock
+(`clock_timestamp()`) evaluated at the INSERT statement **inside the committing transaction**. Commit completes at
+or after that instant, so it is a **lower bound** on commit completion, not a post-commit reading. A true
+post-commit stamp would need a second write after commit, which creates a window where a concurrent retry could
+observe a different receipt value; that trade-off was deliberately not taken. Receipts are identical on every retry.
+
+## Concurrent / multi-worker behaviour
+Unique constraints (`uq_chain_seq`, `uq_idempotency_key`) are the final arbiter. If a request loses a
+check-then-insert race, the service re-reads and returns the **original** receipt (200) when the content is identical,
+or 409 when it conflicts. Verified against SQLite (a stand-in) with 12 racing workers; not yet against PostgreSQL.
+
+## Input validation added after review
+`created_at` must be a real UTC calendar timestamp; sequences must be within [1, 2^63-1] (else 400 instead of a
+database error); fault-control inputs must be finite numbers in range / valid strings (else 400).

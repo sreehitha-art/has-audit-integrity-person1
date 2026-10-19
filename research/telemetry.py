@@ -25,13 +25,14 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_RAW_ROOT = Path(__file__).resolve().parent / "raw"
+RESERVED_FIELDS = frozenset({"event_type", "ts_utc", "mono_ns", "run_id"})
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 
 # Event types Person 2 emits (Person 1's are documented in docs/telemetry_interface.md).
 P2_EVENT_TYPES = {
     "experiment_start", "experiment_end", "request_done",
     "outage_start", "outage_end", "tamper_applied",
-    "anchor_fault_start", "anchor_fault_end",
+    "anchor_fault_start", "anchor_fault_end", "outage_error",
 }
 P1_EVENT_TYPES = {
     "event_committed", "checkpoint_triggered", "checkpoint_created",
@@ -74,14 +75,17 @@ class Telemetry:
             self._fh = open(self.path, "a", encoding="utf-8", buffering=1)
         return self._fh
 
-    def emit(self, event_type: str, **fields: Any) -> dict | None:
-        record = {
-            "event_type": event_type,
-            "ts_utc": utc_now_iso(),
-            "mono_ns": time.monotonic_ns(),
-            "run_id": self.run_id,
-            **fields,
-        }
+    def emit(self, event_type: str, /, **fields: Any) -> dict | None:
+        # Reserved fields always win. A caller field with a reserved name is kept under
+        # "field_<name>" and listed in "reserved_field_conflicts" instead of silently overriding
+        # (or raising: telemetry must never break the caller).
+        conflicts = sorted(k for k in fields if k in RESERVED_FIELDS)
+        user = {(f"field_{k}" if k in RESERVED_FIELDS else k): v for k, v in fields.items()}
+        record = {**user,
+                  "event_type": event_type, "ts_utc": utc_now_iso(),
+                  "mono_ns": time.monotonic_ns(), "run_id": self.run_id}
+        if conflicts:
+            record["reserved_field_conflicts"] = conflicts
         try:
             line = json.dumps(record, sort_keys=False, separators=(",", ":"),
                               allow_nan=False, default=_json_default)
@@ -153,7 +157,7 @@ def end_run() -> None:
         _active = None
 
 
-def emit(event_type: str, **fields: Any) -> dict | None:
+def emit(event_type: str, /, **fields: Any) -> dict | None:
     """Emit to the active run. If no run is active (e.g. unit tests of Person 1's
     code) this is a no-op returning None, so importing it is always safe."""
     t = _active

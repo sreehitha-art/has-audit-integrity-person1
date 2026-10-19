@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -62,7 +63,36 @@ class ExperimentConfig:
     rate_tolerance: float = 0.10             # allowed relative error of achieved vs target rate
     delay_threshold_s: float = 5.0           # predeclared "delayed checkpoint" threshold
 
+    def _check_types(self) -> list:
+        e = []
+        def num(name, v):
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                e.append(f"{name} must be a finite number")
+        for n in ("duration_s", "warmup_s", "target_rate", "dispersion_window_s", "rate_tolerance", "delay_threshold_s"):
+            num(n, getattr(self, n))
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int): e.append("seed must be an integer")
+        if isinstance(self.n_clients, bool) or not isinstance(self.n_clients, int): e.append("n_clients must be an integer")
+        if not isinstance(self.run_id, str): e.append("run_id must be a string")
+        for n in ("policy_params", "risk_mixture", "action_mixture"):
+            if not isinstance(getattr(self, n), dict): e.append(f"{n} must be an object")
+        if not e:
+            for n in ("risk_mixture", "action_mixture"):
+                for k, v in getattr(self, n).items(): num(f"{n}.{k}", v)
+            try: json.dumps(self.policy_params, allow_nan=False)
+            except (TypeError, ValueError): e.append("policy_params must be JSON-serialisable without NaN/inf")
+            b = self.burst
+            if not isinstance(b, BurstSettings): e.append("burst must be BurstSettings")
+            else:
+                for n in ("high_rate", "low_rate", "high_duration_s", "low_duration_s"): num(f"burst.{n}", getattr(b, n))
+            for o in self.outages:
+                if not isinstance(o, OutageWindow): e.append("outages must be OutageWindow items"); continue
+                num("outage.start_s", o.start_s); num("outage.end_s", o.end_s); num("outage.delay_seconds", o.delay_seconds)
+        return e
+
     def __post_init__(self):
+        te = self._check_types()
+        if te:
+            raise ConfigError("; ".join(te))
         e = []
         if not _RUN_ID.match(self.run_id or ""): e.append("run_id invalid")
         if not isinstance(self.seed, int) or isinstance(self.seed, bool) or self.seed < 0:

@@ -91,8 +91,13 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None,
             return JSONResponse({"error": {"code": "not_found", "message": "not found"}}, status_code=404)
         if not st.test_token or not _eq(x_test_token or "", st.test_token):
             raise _Unauthorized()
-        data = await request.json()
-        return core.set_fault(str(data.get("mode", "")), float(data.get("delay_seconds", 0) or 0))
+        try:
+            data = await request.json()
+        except Exception:
+            raise BadRequest("request body is not valid JSON")
+        if not isinstance(data, dict):
+            raise BadRequest("body must be a JSON object")
+        return core.set_fault(data.get("mode"), data.get("delay_seconds", 0.0))
 
     return app
 

@@ -23,6 +23,7 @@ import binascii
 import hashlib
 import json
 import re
+from datetime import datetime
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
@@ -61,8 +62,23 @@ def sign_bytes(private_key, canonical: bytes) -> str:
     return base64.b64encode(private_key.sign(CHECKPOINT_DOMAIN + canonical)).decode("ascii")
 
 
+INT64_MAX = 2**63 - 1      # sequences are stored as BIGINT; reject larger values with 400 (not a 500 at INSERT)
+
+
 def _is_int(v) -> bool:
     return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _valid_utc_timestamp(ts: str) -> bool:
+    """Regex shape AND a real calendar date/time (rejects 2026-13-45T99:99:99Z)."""
+    if not _TS.match(ts):
+        return False
+    body = ts[:-1]
+    try:
+        datetime.strptime(body, "%Y-%m-%dT%H:%M:%S.%f" if "." in body else "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return False
+    return True
 
 
 def validate_checkpoint_structure(cp: dict) -> None:
@@ -79,10 +95,10 @@ def validate_checkpoint_structure(cp: dict) -> None:
     for f in ("chain_id", "policy_config_version", "key_id"):
         if not isinstance(cp[f], str) or not cp[f] or len(cp[f]) > 200:
             raise CheckpointError(f"{f} must be a non-empty string (<=200 chars)")
-    if not _is_int(cp["checkpoint_sequence"]) or cp["checkpoint_sequence"] < 1:
-        raise CheckpointError("checkpoint_sequence must be an integer >= 1")
-    if not _is_int(cp["terminal_event_sequence"]) or cp["terminal_event_sequence"] < 1:
-        raise CheckpointError("terminal_event_sequence must be an integer >= 1")
+    if not _is_int(cp["checkpoint_sequence"]) or not 1 <= cp["checkpoint_sequence"] <= INT64_MAX:
+        raise CheckpointError("checkpoint_sequence must be an integer in [1, 2^63-1]")
+    if not _is_int(cp["terminal_event_sequence"]) or not 1 <= cp["terminal_event_sequence"] <= INT64_MAX:
+        raise CheckpointError("terminal_event_sequence must be an integer in [1, 2^63-1]")
     if not isinstance(cp["terminal_event_hash"], str) or not _HEX64.match(cp["terminal_event_hash"]):
         raise CheckpointError("terminal_event_hash must be 64 lowercase hex chars")
     prev = cp["previous_checkpoint_digest"]
@@ -91,8 +107,8 @@ def validate_checkpoint_structure(cp: dict) -> None:
             raise CheckpointError("previous_checkpoint_digest must be null for checkpoint_sequence 1")
     elif not isinstance(prev, str) or not _HEX64.match(prev):
         raise CheckpointError("previous_checkpoint_digest must be 64 lowercase hex chars")
-    if not isinstance(cp["created_at"], str) or not _TS.match(cp["created_at"]):
-        raise CheckpointError("created_at must be UTC ISO-8601 ending in 'Z'")
+    if not isinstance(cp["created_at"], str) or not _valid_utc_timestamp(cp["created_at"]):
+        raise CheckpointError("created_at must be a valid UTC ISO-8601 timestamp ending in 'Z'")
     if cp["policy_name"] not in POLICY_NAMES:
         raise CheckpointError(f"policy_name must be one of {sorted(POLICY_NAMES)}")
 

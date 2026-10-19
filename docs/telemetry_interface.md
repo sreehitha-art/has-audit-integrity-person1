@@ -21,3 +21,7 @@ Each line of `research/raw/<run_id>/events.jsonl` gets `event_type, ts_utc, mono
 
 Time alignment: analysis uses `mono_ns`, so emit from the **same process/host** as the experiment runner or
 agree a clock-offset method. Multi-process runs need this resolved before final experiments.
+
+**Reserved fields:** `event_type, ts_utc, mono_ns, run_id` are always set by the library. If a caller passes a field
+with one of those names it is stored as `field_<name>` and listed in `reserved_field_conflicts`; it never overrides
+the standard fields and never raises. `emit`'s first argument is positional-only.

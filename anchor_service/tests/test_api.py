@@ -64,6 +64,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.c.post("/v1/_test/fault", json={"mode": "down"}, headers={"X-Test-Token": "bad"}).status_code, 401)
         self.assertEqual(self.c.post("/v1/_test/fault", json={"mode": "bogus"}, headers={"X-Test-Token": TTOKEN}).status_code, 400)
 
+    def test_fault_endpoint_rejects_bad_values_with_400_not_500(self):
+        FT = {"X-Test-Token": TTOKEN}
+        for payload in ({"mode": "delay", "delay_seconds": "abc"}, {"mode": "delay", "delay_seconds": -1},
+                        {"mode": "delay", "delay_seconds": 9999}, {"mode": 5}, [1, 2]):
+            self.assertEqual(self.c.post("/v1/_test/fault", json=payload, headers=FT).status_code, 400, payload)
+        self.assertEqual(self.c.post("/v1/_test/fault", content=b"{oops", headers=FT).status_code, 400)
+        self.assertEqual(self.c.post("/v1/checkpoints", json=body(self.cps[0], "ok1"), headers=H).status_code, 201)  # still healthy
+
+    def test_oversized_sequence_and_impossible_date_are_400(self):
+        from anchor_service.tests.helpers import make_checkpoint, sign
+        cp = make_checkpoint(1); cp["created_at"] = "2026-13-45T99:99:99.000000Z"; sg, _ = sign(cp, self.key)
+        self.assertEqual(self.c.post("/v1/checkpoints", json={"checkpoint": cp, "signature": sg, "idempotency_key": "d"}, headers=H).status_code, 400)
+
     def test_down_mode_503_then_recover(self):
         FT = {"X-Test-Token": TTOKEN}
         self.c.post("/v1/_test/fault", json={"mode": "down"}, headers=FT)

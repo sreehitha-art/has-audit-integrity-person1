@@ -68,6 +68,8 @@ def confirmed_age_series(checkpoints, t_grid):
 
 
 def max_confirmed_age_during(checkpoints, start_t, end_t, step=0.05) -> float:
+    """Max age of the latest confirmed checkpoint in [start_t, end_t]. Instants before the FIRST
+    confirmation have undefined age and are skipped (NaN if the whole window is such)."""
     grid = np.arange(start_t, end_t + step, step)
     a = confirmed_age_series(checkpoints, grid)
     return float(np.nanmax(a)) if np.isfinite(a).any() else float("nan")
@@ -78,6 +80,9 @@ def recovery_lag(outage_end_t, checkpoints, events=None) -> float:
     outage_end_t of a checkpoint that covers every event committed up to outage_end_t.
     NaN if never cleared (censored)."""
     last_seq = max((e["seq"] for e in events if e["commit_t"] <= outage_end_t), default=0) if events else 0
+    if events and any(c.get("confirmed_t") is not None and c["confirmed_t"] <= outage_end_t
+                      and c["terminal_event_sequence"] >= last_seq for c in checkpoints):
+        return 0.0      # backlog already covered at/before outage end (e.g. a 'delay' fault): no recovery needed
     cand = [c["confirmed_t"] for c in checkpoints
             if c.get("confirmed_t") is not None and c["confirmed_t"] >= outage_end_t
             and c["terminal_event_sequence"] >= last_seq]

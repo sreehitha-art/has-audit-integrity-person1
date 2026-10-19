@@ -10,6 +10,7 @@ tests). The repository's ``insert`` MUST be durable (committed) when it returns.
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 import uuid
@@ -139,11 +140,16 @@ class AnchorCore:
         self._on_fault_event = on_fault_event or (lambda *a, **k: None)
 
     # -- fault control (test mode only; authorisation enforced by API layer) --
-    def set_fault(self, mode: str, delay_seconds: float = 0.0) -> dict:
-        if mode not in FAULT_MODES:
+    def set_fault(self, mode, delay_seconds=0.0) -> dict:
+        """Inputs are untrusted JSON values: validate type AND finiteness (NaN/inf/str/bool -> 400)."""
+        if not isinstance(mode, str) or mode not in FAULT_MODES:
             raise BadRequest(f"mode must be one of {sorted(FAULT_MODES)}")
+        if (isinstance(delay_seconds, bool) or not isinstance(delay_seconds, (int, float))
+                or not math.isfinite(delay_seconds)):
+            raise BadRequest("delay_seconds must be a finite number")
         if delay_seconds < 0 or delay_seconds > 600:
             raise BadRequest("delay_seconds must be within [0, 600]")
+        delay_seconds = float(delay_seconds)
         with self._fault_lock:
             prev = self.fault
             if prev.mode != "ok":      # observed end of previous fault
@@ -224,4 +230,18 @@ class AnchorCore:
                 signature=v.signature_b64, key_id=cp["key_id"],
                 received_at=received_at, durably_retained_at="",  # set by repo after commit
                 idempotency_key=key)
-            return self.repo.insert(rec), True      # insert() returns only after COMMIT
+            try:
+                return self.repo.insert(rec), True      # insert() returns only after COMMIT
+            except Conflict:
+                # Lost a check-then-insert race against another worker/process (the DB unique
+                # constraints are the real arbiter). Re-resolve: an identical logical request must
+                # get the ORIGINAL receipt, not a 409; genuinely conflicting content stays 409.
+                won = self.repo.get_by_idempotency_key(key)
+                if won is not None:
+                    if won.checkpoint_digest == v.digest and won.chain_id == cp["chain_id"]:
+                        return won, False
+                    raise Conflict("idempotency_key already used with different checkpoint content")
+                won = self.repo.get_by_chain_seq(cp["chain_id"], cp["checkpoint_sequence"])
+                if won is not None and won.checkpoint_digest == v.digest:
+                    return won, False
+                raise

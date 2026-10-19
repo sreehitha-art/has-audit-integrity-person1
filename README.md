@@ -18,6 +18,15 @@ python -m anchor_service.main             # serves on http://127.0.0.1:8001
 ```
 ## Tests
 ```bash
+python scripts/preflight.py        # tells you exactly which test groups can run here and why others can't
+python scripts/run_all_tests.py   # all suites; prints counts and the reason for every skip (--strict fails on skips)
+```
+To run the PostgreSQL tests (UNVERIFIED helper): `docker compose up -d`, then
+`export ANCHOR_DATABASE_URL=ANCHOR_TEST_DATABASE_URL=postgresql+psycopg2://anchor_user:local_only_change_me@127.0.0.1:5433/anchor_research`
+(set both variables to that URL), `alembic upgrade head`, `python scripts/run_all_tests.py --strict`.
+
+Individual commands:
+```bash
 python -m unittest discover -s anchor_service/tests -t . && python -m unittest discover -s research/tests -t .
 # or: pytest        # API tests need fastapi+httpx; Postgres tests need ANCHOR_TEST_DATABASE_URL (see test file)
 ```

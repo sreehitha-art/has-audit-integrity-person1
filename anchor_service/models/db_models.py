@@ -19,7 +19,9 @@ class RetainedCheckpoint(Base):
     signature = Column(Text, nullable=False)
     key_id = Column(String(200), nullable=False)
     received_at = Column(DateTime(timezone=True), nullable=False)
-    # server-side clock at COMMIT time of the insert transaction (see repository.insert)
+    # DB clock_timestamp() evaluated at the INSERT statement inside the committing transaction.
+    # It is a LOWER BOUND on commit completion (commit finishes at/after it), not a post-commit
+    # reading. See docs/anchor_api_contract.md -> 'durably_retained_at semantics'.
     durably_retained_at = Column(DateTime(timezone=True), nullable=False, server_default=func.clock_timestamp())
     idempotency_key = Column(String(200), nullable=False)
     __table_args__ = (

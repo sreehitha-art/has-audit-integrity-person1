@@ -8,11 +8,11 @@ in the guide; they were chosen so the service is testable and must be confirmed.
 |---|---|---|
 | version | int | must be `1` |
 | chain_id | string | 1–200 chars |
-| checkpoint_sequence | int ≥ 1 | consecutive per chain |
-| terminal_event_sequence | int ≥ 1 | non-decreasing |
+| checkpoint_sequence | int in [1, 2^63-1] | consecutive per chain |
+| terminal_event_sequence | int in [1, 2^63-1] | non-decreasing |
 | terminal_event_hash | string | 64 lowercase hex — **ASSUMPTION** hex encoding |
 | previous_checkpoint_digest | string \| null | null iff sequence = 1; else 64 lowercase hex |
-| created_at | string | UTC ISO-8601 ending `Z` |
+| created_at | string | real UTC ISO-8601 timestamp ending `Z` (impossible dates rejected) |
 | policy_name | string | `A`, `B`, `C-risk`, `C-unit` |
 | policy_config_version | string | 1–200 chars |
 | key_id | string | selects the trusted public key |

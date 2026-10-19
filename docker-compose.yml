@@ -1,0 +1,12 @@
+# UNVERIFIED (Docker was not available in the build sandbox). Disposable PostgreSQL for Person 2's tests.
+# Port 5433 so it never collides with a developer's own PostgreSQL. Credentials are throwaway local ones.
+services:
+  anchor-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: anchor_user
+      POSTGRES_PASSWORD: local_only_change_me
+      POSTGRES_DB: anchor_research
+    ports: ["127.0.0.1:5433:5432"]
+    command: ["postgres", "-c", "fsync=on", "-c", "synchronous_commit=on"]   # keep durability on for experiments
+    volumes: ["./scripts/setup_postgres.sql:/docker-entrypoint-initdb.d/10_setup.sql:ro"]
