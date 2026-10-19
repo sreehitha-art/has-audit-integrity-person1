@@ -1,0 +1,50 @@
+{
+  "action_mixture": {
+    "create_appointment": 0.4,
+    "create_patient": 0.3,
+    "update_patient": 0.3
+  },
+  "audit_mode": "full",
+  "burst": {
+    "high_duration_s": 0.0,
+    "high_rate": 0.0,
+    "low_duration_s": 0.0,
+    "low_rate": 0.0
+  },
+  "chain_scope": "global",
+  "delay_threshold_s": 5.0,
+  "dispersion_window_s": 1.0,
+  "duration_s": 30,
+  "n_clients": 2,
+  "outages": [
+    {
+      "delay_seconds": 0.0,
+      "end_s": 14,
+      "label": "o1",
+      "mode": "down",
+      "start_s": 8
+    },
+    {
+      "delay_seconds": 30.0,
+      "end_s": 24,
+      "label": "o2",
+      "mode": "drop_response",
+      "start_s": 20
+    }
+  ],
+  "policy_name": "B",
+  "policy_params": {
+    "N": 20
+  },
+  "rate_tolerance": 0.1,
+  "risk_mixture": {
+    "high": 0.1,
+    "low": 0.6,
+    "medium": 0.3
+  },
+  "run_id": "smoke_mock",
+  "seed": 1,
+  "target_rate": 10,
+  "warmup_s": 2,
+  "workload_type": "poisson"
+}

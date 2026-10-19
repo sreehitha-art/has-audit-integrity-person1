@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.pem
+*.key
+*.sqlite3
+research/raw/*
+!research/raw/.gitkeep
+research/reports/*
+!research/reports/.gitkeep
+anchor_service/trusted_keys/*.pem
+!anchor_service/trusted_keys/*.pub.pem
+.pytest_cache/
